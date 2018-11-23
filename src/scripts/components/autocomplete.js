@@ -2,7 +2,6 @@ export class Autocomplete {
     constructor(options) {
         this.data = options.data;
         this.getData = options.getData;
-        this.minSearchLength = options.minSearchLength || 2;
         this.searchInput = options.searchInput;
         this.$searchInput = null;
         this.$autocompleteList = null;
@@ -234,8 +233,8 @@ export class Autocomplete {
         }, []);
     }
 
-    highlightWord(source, pattern) {
-        const entries = this.getAllEntries(source, pattern);
+    highlightWord(word, pattern) {
+        const entries = this.getAllEntries(word, pattern);
 
         if (!entries.length) return null;
 
@@ -246,8 +245,6 @@ export class Autocomplete {
         }
 
         return template;
-
-        // const highlightedWord = `${word.slice(0, startPos)}<span>${searchText}</span>${word.slice(startPos + searchText.length)}`;
     }
 
     getAllEntries(str, pattern) {
@@ -255,7 +252,7 @@ export class Autocomplete {
         let i = 0;
 
         while(i < str.length) {
-            const startPos = str.indexOf(pattern);
+            const startPos = str.indexOf(pattern, i);
 
             if (!~startPos) break;
 
