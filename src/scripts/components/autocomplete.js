@@ -2,6 +2,7 @@ export class Autocomplete {
     constructor(options) {
         this.data = options.data;
         this.getData = options.getData;
+        this.minSearchLength = options.minSearchLength || 2;
         this.searchInput = options.searchInput;
         this.$searchInput = null;
         this.$autocompleteList = null;
@@ -9,6 +10,7 @@ export class Autocomplete {
         this.formatedData = [];
         this.isWorking = false;
         this.isDestroyed = false;
+        this.isShownList = false;
         this.classNames = {
             list: 'autocomplete-list',
             relative: 'uk-position-relative',
@@ -24,8 +26,8 @@ export class Autocomplete {
     }
 
     init() {
-        this.preRenderList();
         this.bindElements();
+        this.preRenderList();
         this.attachHandlers();
         this.formatedData = this.getFormatedData();
 
@@ -46,18 +48,20 @@ export class Autocomplete {
     detachHandlers() {
         this.$searchInput.off('input', this.inputChangeHandler);
         this.$autocompleteList.off('click', this.autocompleteChooseHandler);
+        this.$body.off('click', this.outerClickHandler);
     }
 
     preRenderList() {
         this.$autocompleteList = $(`<ul class="${this.classNames.list}"></ul>`);
         this.$autocompleteList
-            .appendTo('body')
+            .appendTo(this.$body)
             .hide();
-        this.setListPosition();
     }
 
     renderList(words) {
         const $list = this.$autocompleteList;
+
+        $list.empty();
 
         for (const word of words) {
             const listItem = `<li>${word}</li>`;
@@ -74,17 +78,26 @@ export class Autocomplete {
         });
     }
 
-    showList(time) {
+    showList(ms) {
+        this.setListPosition();
         return new Promise(resolve => {
             this.$body.addClass(this.classNames.relative);
-            this.$autocompleteList.fadeIn(time || 200, () => resolve());
+            this.$autocompleteList.fadeIn(ms || 100, () => {
+                this.setListPosition();
+                this.$body.on('click', this.outerClickHandler);
+                this.isShownList = true;
+                resolve();
+            });
         });
     }
 
-    hideList(time) {
+    hideList(ms) {
         return new Promise(resolve => {
-            this.$autocompleteList.fadeOut(time || 200, () => {
-                this.$body.removeClass(this.classNames.relative);
+            this.$autocompleteList.fadeOut(ms || 100, () => {
+                this.$body
+                    .off('click', this.outerClickHandler)
+                    .removeClass(this.classNames.relative);
+                this.isShownList = false;
                 resolve();
             });
         });
@@ -97,9 +110,18 @@ export class Autocomplete {
 
     inputChangeHandler = e => {
         const val = e.target.value;
+
+        if (!val) {
+            this.hideList();
+            return;
+        }
+
         const purposalWords = this.getPurposalWords(this.formatedData, val);
 
-        if (!purposalWords) return;
+        if (!purposalWords.length) {
+            this.hideList();
+            return;
+        }
 
         this.renderList(purposalWords);
         this.showList();
@@ -112,6 +134,15 @@ export class Autocomplete {
         if (!li) return;
 
         this.changeInputValue(li.textContent);
+        this.hideList();
+    };
+
+    outerClickHandler = e => {
+        const $target = $(e.target);
+        const $list = $target.closest(this.$autocompleteList);
+
+        if ($list.length) return;
+
         this.hideList();
     };
 
@@ -131,25 +162,42 @@ export class Autocomplete {
             return this.parseData(this.data);
         }
 
-        if (typeof this.getData === 'function') {
-            if (typeof this.getData.then === 'function') {
-                return this.getData().then(data => this.parseData(data));
-            }
-
-            typeof this.parseData(this.getData());
+        if (typeof this.getData !== 'function') {
+            return [];
         }
 
-        return null;
+        const data = this.getData();
+
+        if (typeof data.then === 'function') {
+            return this.getData().then(data => this.parseData(data));
+        }
+
+        return this.parseData(data);
     }
 
     parseData(data) {
-        if (Array.isArray((data))) {
-            return data;
-        }
+        let processedData = data;
 
         if (typeof data === 'string') {
-            return data.split(' ');
+            processedData = data.split(' ');
         }
+
+        processedData = processedData.reduce((arr, str) => {
+            let word = this.removeSymbols(str)
+                .toLowerCase();
+
+            if (word) {
+                arr.push(word);
+            }
+
+            return arr;
+        }, []);
+
+        return this.removeRepetition(processedData);
+    }
+
+    removeSymbols(str) {
+        return str.replace(/[^A-Za-z0-9\u0400-\u04FF]/g, '');
     }
 
     removeRepetition(data) {
@@ -172,13 +220,55 @@ export class Autocomplete {
     }
 
     getPurposalWords(searchData, searchText) {
-        return searchData.filter(data => ~data.indexOf(searchText));
+        const searchTextLowered = searchText.toLowerCase();
+
+        return searchData.reduce((arr, word) => {
+            const startPos = word.indexOf(searchTextLowered);
+
+            if (~startPos){
+                const highlightedWord = this.highlightWord(word, searchText);
+                arr.push(highlightedWord);
+            }
+
+            return arr;
+        }, []);
+    }
+
+    highlightWord(source, pattern) {
+        const entries = this.getAllEntries(source, pattern);
+
+        if (!entries.length) return null;
+
+        let template = word.slice(0, entries[0]);
+
+        for (let i = 0; i < entries.length; i++) {
+            template += `<span>${pattern}</span>${word.slice(entries[i] + pattern.length, entries[i+1])}`;
+        }
+
+        return template;
+
+        // const highlightedWord = `${word.slice(0, startPos)}<span>${searchText}</span>${word.slice(startPos + searchText.length)}`;
+    }
+
+    getAllEntries(str, pattern) {
+        let result = [];
+        let i = 0;
+
+        while(i < str.length) {
+            const startPos = str.indexOf(pattern);
+
+            if (!~startPos) break;
+
+            result.push(startPos);
+            i = startPos + pattern.length;
+        }
+
+        return result;
     }
 
     changeInputValue(val) {
         if (!val) return;
 
-        this.inputValue = val;
         this.$searchInput.val(val);
     }
 
@@ -193,25 +283,27 @@ export class Autocomplete {
         this.attachHandlers();
         this.isWorking = true;
         this.$searchInput.trigger(this.events.start, {controller: this});
-    }
+    };
 
     stop = () => {
-        if (!this.isWorking) return;
-
-        this.isWorking = false;
-        this.$searchInput.trigger(this.events.stop, {controller: this});
-    }
-
-    destroy = () => {
-        if (!this.isWorking) return;
+        if (this.isDestroyed) return;
 
         this.detachHandlers();
-        this.hideList(0)
+        return this.hideList()
+            .then(() => {
+                this.isWorking = false;
+                this.$searchInput.trigger(this.events.stop, {controller: this});
+            });
+    };
+
+    destroy = () => {
+        if (this.isDestroyed) return;
+
+        return this.stop()
             .then(() => {
                 this.removeList();
-                this.isWorking = false;
                 this.isDestroyed = true;
                 this.$searchInput.trigger(this.events.destroy, {controller: this});
             });
-    }
+    };
 }

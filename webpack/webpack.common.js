@@ -8,11 +8,6 @@ const HtmlWebpackPlugin = require('html-webpack-plugin');
 
 const dest = Path.join(__dirname, '../dist');
 
-// new webpack.ProvidePlugin({
-//     $: 'jquery',
-//     jQuery: 'jquery'
-// });
-
 module.exports = {
     entry: Path.resolve(__dirname, '../src/scripts/index'),
     output: {
