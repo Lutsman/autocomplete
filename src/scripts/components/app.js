@@ -1,5 +1,5 @@
-import {Autocomplete} from './autocomplete';
-import './autocomplete.less';
+import {Autocomplete} from './autocomplete/autocomplete';
+import './autocomplete/autocomplete.less';
 
 $(() => {
     const $input = $('.search-input');
